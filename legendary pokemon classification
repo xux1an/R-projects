@@ -1,0 +1,235 @@
+---
+title: "Pokemon"
+author: "Xuxin Zhang"
+date: "8/18/2020"
+output: html_document
+---
+## Introduction
+
+In this project, we will explore the pokemon data. The focus is to develope a machine learning model to predict whether a pokemon is legendary or not. If you have watched the Pokemon animes or played pokemon games, you will know that legendary pokemons are really powerful, rare, and hard (almost impossible) to get. In our project, we hope to discover other characteristics of legendary pokemons so that we could accurately predict if a given pokemon is legendary. 
+
+## Data wranggling
+```{r}
+library(tidyverse)
+library(tidymodels)
+
+pokemon <- read_csv("pokemon.csv")
+pokemon
+```
+
+If you look at the data, you will probably notice that some of the pokemons have two types. Since types could a potential indicator of legendary pokemons, we need to clean the Type_1 and Type_2 columns.
+
+```{r}
+
+pokemon_new <-pokemon%>%gather(Type, type_value, Type_1,Type_2)
+
+```
+
+Notice that in the code below, we deselect the Egg group and hasMegaEvolution. Mega evolution is quite new concept in pokemon anime/ game. It may not be applied to pokemons in early generations.
+
+```{r}
+pokemon_new_1<-pokemon_new%>%select(-Egg_Group_1,-Egg_Group_2,-Type,-hasMegaEvolution)
+
+pokemon_df<-pokemon_new_1[complete.cases(pokemon_new_1$type_value),]
+
+pokemon_df$Generation<-factor(pokemon_df$Generation)
+
+
+colors <- c("#593420","#080c26","#7d8228", "#e2dc2f","#fcdefb","#662714","#c91f01","#d0edef","#7f7682","#2d6633","#5b5550","#8dd9f4","#e0e0e0","#126347","#4a116b","#332f28","#bababa","#203bc1")
+```
+ 
+After finishing the data cleaning, we are ready to explore our data.
+
+## Data exploratory analysis
+### Distribution of legendary pokemons
+First, we can study the distribution of the number of legendary pokemons. For example, we can try to find out how the number of legendary pokemon changes through generations.
+```{r}
+library(plotly)
+
+ggplotly(pokemon_df%>%count(Generation, isLegendary)%>%ggplot(aes(x = Generation, y = n, fill = isLegendary))+geom_col(position = "dodge")+ scale_fill_brewer(palette = "Paired")+labs(title = "Distribution of legendary pokemons across generations",fill = "Legendary"))
+```
+
+Based on this graph, we could see that the legendary pokemons are qiute rare in the first two generations. The number of newly created legendary pokemons spikes at the fifth generation. If we compare the number of legendary and non-legendary pokemons, we will know that our initial assumption about the rarity of legendary pokemons does hold.
+
+Speaking of generation, we can study how the type of pokemons is composed in different generations.
+```{r}
+ggplotly(pokemon_df%>%count(type_value,Generation, sort = TRUE)%>%ggplot(aes(x = n, y = reorder(type_value, n), fill = Generation))+geom_col()+ scale_fill_brewer(palette = "Paired")+labs(title = "Number of different types in each generation",y = "Types", fill = "Generation"))
+```
+
+In this graph, we can see that how many pokemons of each type are there. In addition, most pokemons are created during the first generation and fifth generation.
+
+Next, we could try to take a look at the number of legendary pokemons in different types since type could be a potential indicator.
+```{r}
+ggplotly(pokemon_df%>%ggplot(aes(x = isLegendary))+geom_bar(aes(fill = type_value), show.legend = FALSE)+facet_wrap(~type_value, scales = "free_y")+scale_fill_manual(values=as.character(colors))+labs(x="Legendary", y = "Count", fill = "Type", title = "Distribution of legendary pokemons in each type"))
+```
+
+Based on the graph above, we see that the Psychic type has the most legendary pokemons. The next types with the most legendary pokemons are the Dragon and Flying Type. However, the reason why the Flying type has the same number of legendary pokemons as Dragon type could be the problem our cleaning method results: usually dragon pokemons may also have a second type of Flying.
+
+### Power of legendary pokemons
+After analyzing the number of legendary pokemons, we could begin our analysis on their strength.
+```{r}
+pokemon_df%>%ggplot(aes(x = Generation, y = Total, fill = isLegendary))+geom_boxplot(position = "dodge")+ scale_fill_brewer(palette = "Paired")+labs(y = "Overall Ability", title = "Overall ability of pokemons in each generation", fill = "Legendary")
+```
+
+We could further see the strength distribution for different types with the help of a boxplot.
+```{r}
+pokemon_df%>%ggplot(aes(x = Total, y = reorder(type_value, Total), fill = isLegendary))+geom_boxplot(alpha =.6)+ scale_fill_brewer(palette = "Paired")+labs(x = "Overall Ability", y ="Type", title = "Overall ability of pokemons in each type", fill = "Legendary")
+```
+
+Based on the two graphs above, we could see that legendary pokemons always have a higher total ability stats than non-legendary pokemons regardless of the generation or type, which confirms our initial assumption once again.
+
+In fact, relating to the graph about the number of different types, we may guess that it could be the strength of a single type that limits the population of pokemons of that type. This kind of design would balance the fairness of the game. 
+
+In addition, we see that from the first graph that on average, the second and fourth generation have the strongest pokemons. Similarly, from the second graph, legendary normal and legendary dragon pokemons are stronger. To a lot of people's surprise, legendary dragon type pokemons may not be the strongest pokemons out there (in our case, the normal type legendary pokemons are the strongest one).
+
+### Color for legendary pokemons
+In addition, we can study the color distribution for legendary pokemons.
+```{r}
+pokemon_df%>%ggplot(aes(x = Color, fill = isLegendary))+geom_bar(position = "dodge")+ scale_fill_brewer(palette = "Paired")+labs( title = "Distribution of color for pokemons", fill = "Legendary")
+```
+From this graph, we could see that there are more legendary pokemons with certain colors than the others, but it could also be the case that certain colors already have more pokemons than the others. Thus, we need to compare the proportion.
+
+```{r}
+pokemon_color_leg<-pokemon_df%>%count(Color, isLegendary)%>%spread(isLegendary,n)
+
+names(pokemon_color_leg)<-c("Color", "False", "True")
+pokemon_color_leg%>%mutate(prop = True/ (True+False))%>%ggplot(aes(x = reorder(Color, prop), y = prop))+geom_col(color = "white", fill = "lightblue")+labs( title = "Legendary and non-legendary pokemons ratio for each color", x = "Color")
+
+pokemon_color_leg%>%mutate(legend_prop = True/sum(True))%>%ggplot(aes(x = reorder(Color, legend_prop), y = legend_prop))+geom_col(color = "white", fill = "lightblue")+labs( title = "Proportion of color within legendary pokemons", x ="Color")
+```
+
+Now we see that the top three colors with the highest legendary pokemon ratio are red, white, black, and yellow. Moreover, red, yellow, and blue are the top colors legendary pokemons tend to have. Notice the difference between the two graph is that for the first graph, the proportion is the ratio between legendary and non-legendary pokemons for each color; for the second graph, we only look at legendary pokemons and study the proportion of each color.
+
+### Physical features for legendary pokemon
+Finally, we could study the physical features such as height and weight of legendary pokemons. We first look at the height distribution for different types.
+```{r}
+pokemon_df%>%ggplot(aes(x = Height_m, y = reorder(type_value, Height_m)))+geom_boxplot()+labs( title = "Height distribution for pokemons of different types", x = "Height (m)",  y = "Type")
+```
+
+We then turn to their weight.
+```{r}
+pokemon_df%>%ggplot(aes(x = Weight_kg, y = reorder(type_value, Weight_kg)))+geom_boxplot()+labs( title = "Weight distribution for pokemons of different types", x = "weight (kg)",  y = "Type")
+```
+Based on these two graphs, we see that Dragon, Steel, Ice, and Ground are both the heaviest and tallest types of pokemons. 
+
+In order to take both the height and the weight into consideration, we would create a column of BMI for the pokemons.
+
+```{r}
+pokemon_df<-pokemon_df%>%mutate(BMI = Weight_kg/(Height_m*Height_m))
+```
+
+```{r}
+pokemon_df%>%ggplot(aes(x = BMI, y = reorder(type_value, BMI), fill = isLegendary))+geom_boxplot(alpha = .6)+ scale_fill_brewer(palette = "Paired")+labs( title = "BMI distribution for pokemons of different types", x = "BMI",  y = "Type", fill = "Legendary")
+```
+
+We see that for some of the types, the legendary pokemons have a smaller BMI than those non-legendary pokemons, which might help us to distinguish between them.
+
+## Classification models
+### Set up the models
+Now we begin to build our model. First, we need to split our data into training and testing data. The reason why we created a bootstraps object is because we are going to use it to compare the performance of the four models.
+
+```{r}
+set.seed(234)
+pokemon_df_2<-pokemon_df%>%mutate(type = type_value)%>%select(-Name,-Weight_kg, -Height_m, -type_value,-Pr_Male,-Body_Style)%>%mutate_if(is.logical, factor)%>%mutate_if(is.character, factor)%>%na.omit()
+
+pokemon_split <- initial_split(pokemon_df_2)
+
+pokemon_train <- training(pokemon_split)
+pokemon_testing <- testing(pokemon_split)
+
+pokemon_boot <- bootstraps(pokemon_train)
+```
+
+Next, we set up the recipe. In the pre-processing part, for all nominal variables (except the outcome), we creates dummy variables. In this way, all the predictors would have numerical values. We also used SMOTE to remedy our imbalanced dataset since there are only a few legendary pokemons out there.
+```{r}
+## set up the recipe
+
+library(themis)
+
+pokemon_recipe<-recipe(isLegendary~., pokemon_train)%>%step_dummy(all_nominal(),-all_outcomes())%>%step_corr(all_predictors())%>%step_zv(all_predictors())%>%step_normalize(all_predictors())%>%step_smote(isLegendary)
+
+prep(pokemon_recipe)%>%juice()
+
+test_proc<-bake(prep(pokemon_recipe), new_data = pokemon_testing)
+```
+
+Then, we set up the models. In this project, we will use for models: logistic regression, random forrest, nearest neighbor, and decision tree model. 
+```{r}
+## set up the model
+glr_model <- logistic_reg()%>%set_engine("glm") 
+
+rf_model <- rand_forest()%>%set_mode("classification")%>%set_engine("ranger")
+
+nn_model <- nearest_neighbor()%>%set_mode("classification")%>%set_engine("kknn")
+
+tree_model <- decision_tree()%>%set_mode("classification")%>%set_engine("rpart")
+
+```
+
+After specifying the models, we can combine them with the recipe to create workflow for each model.
+```{r}
+glr_wf <- workflow()%>%add_recipe(pokemon_recipe)%>%add_model(glr_model)
+
+rf_wf<-workflow()%>%add_recipe(pokemon_recipe)%>%add_model(rf_model)
+
+nn_wf<-workflow()%>%add_recipe(pokemon_recipe)%>%add_model(nn_model)
+
+tree_wf<-workflow()%>%add_recipe(pokemon_recipe)%>%add_model(tree_model)
+```
+
+Now we are ready to apply the workflows to our bootstraps object.
+```{r}
+glr_resample <- glr_wf%>%fit_resamples(resamples = pokemon_boot, control = control_resamples(save_pred = TRUE, verbose = TRUE)) 
+
+rf_resample <- rf_wf%>%fit_resamples(resamples = pokemon_boot, control = control_resamples(save_pred = TRUE, verbose = TRUE)) 
+
+nn_resample <- nn_wf%>%fit_resamples(resamples = pokemon_boot, control = control_resamples(save_pred = TRUE, verbose = TRUE)) 
+
+tree_resample <- tree_wf%>%fit_resamples(resamples = pokemon_boot, control = control_resamples(save_pred = TRUE, verbose = TRUE)) 
+```
+
+### Evaluate the models
+To evaluate the performance of each model, we use the function collect_metrics(). Based on the accuracy and roc_auc metrics, we can see that the random forrest and decision tree models work the best at classification.
+```{r}
+## evaluate the models
+glr_resample%>%collect_metrics()
+rf_resample%>%collect_metrics()
+nn_resample%>%collect_metrics()
+tree_resample%>%collect_metrics()
+```
+
+We can also visualize the roc curve for each model in the following way.
+```{r}
+prediction_together<-glr_resample%>%collect_predictions()%>%mutate(model = "glr")%>%bind_rows(rf_resample%>%collect_predictions()%>%mutate(model = "rf"))%>%bind_rows(nn_resample%>%collect_predictions()%>%mutate(model = "nn"))%>%bind_rows(tree_resample%>%collect_predictions()%>%mutate(model = "tree"))
+
+prediction_together%>%group_by(model)%>%roc_curve(isLegendary,.pred_FALSE)%>%autoplot()
+```
+
+Based on the roc auc curve, we are going to use the random forrest model to predict whether a pokemon is legendary or not. 
+
+In addition, we can study the confusion matrix. 
+```{r}
+rf_resample%>%collect_predictions()%>%conf_mat(isLegendary, .pred_class)
+```
+
+```{r}
+rf_resample%>%collect_predictions()%>%ggplot(aes(x = .pred_FALSE, fill = isLegendary))+geom_density()
+```
+
+
+Since we have decided which model we will use, we need to know more about it by looking at the importance of different variables.
+```{r}
+library(vip)
+rf_model%>%set_engine("ranger", importance = "permutation")%>%fit(isLegendary~., juice(prep(pokemon_recipe)))%>%vip(geom= "point")
+```
+From the Variable of Importance (VIP) graph, we see that the top predictors are Total, Catch_Rate, Attach and hasGender.
+
+With this model, we could finally evalute the model by applying the model to testing dataset. From the roc_auc metric, we could see that thte probability of using the trained model to successfully predict the testing data is about 99.89%, which means our model does a really good job at predicting whether a given pokemon is legendary or not. 
+```{r}
+set.seed(1235)
+rf_fit<-rf_model%>%set_engine("ranger", importance = "permutation")%>%fit(isLegendary~., juice(prep(pokemon_recipe)))
+
+rf_fit%>%predict(test_proc,type = "prob")%>%mutate(truth = test_proc$isLegendary)%>%roc_auc(truth,.pred_FALSE)
+```
+
+
