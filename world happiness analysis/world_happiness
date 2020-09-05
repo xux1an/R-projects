@@ -1,0 +1,152 @@
+---
+title: "World Happiness"
+author: "Xuxin Zhang"
+date: "8/26/2020"
+theme: united
+output: html_document
+---
+## Introduction
+In this project, we will explore the world happiness report data from 2015 to 2020. We hope to find out the relationship between different indicators of happiness such as happiness score, GDP Per Capita, and health. In addition, we will anlayze the data by year, by continent, and finally by country to gain more insight about the world happiness.
+
+## Data Cleaning and Wranggling
+We first import all the files we have. 
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(stringr)
+
+data2015 <- read_csv("datasets_748584_1294786_2015.csv")
+data2015
+
+data2016 <- read_csv("datasets_748584_1294786_2016.csv")
+data2016
+
+data2017 <- read_csv("datasets_748584_1294786_2017.csv")
+data2017
+
+data2018 <- read_csv("datasets_748584_1294786_2018.csv")
+data2018
+
+data2019 <- read_csv("datasets_748584_1294786_2019.csv")
+data2019
+
+data2020 <- read_csv("datasets_748584_1294786_2020.csv")
+data2020
+```
+
+Note that each of the file only contains the data for a certain year. For our purpose of analysis, we need to combine them together in a single dataset. However, we notice that for each file, the number of variables and their names are different. What we did in the following code is that we select the same variables for each file and rename them correspondingly. In this way, all the files would have the same variables. After doing so, we then combine the five files by row with the help of `rbind()`. 
+
+```{r}
+region_country<-data2015%>%select(Country,Region)
+
+data_2015_test_1<-data2015%>%select(-`Standard Error`,-`Dystopia Residual`)
+names(data_2015_test_1)<-c("country","region","happiness_rank","happiness_score","econ","family","health","freedom","corruption","genero")
+data_2015_test_1<-data_2015_test_1%>%mutate(year = "2015")
+  
+data_2016_test_1<-data2016%>%select(-`Lower Confidence Interval`,-`Upper Confidence Interval`,-`Dystopia Residual`)
+names(data_2016_test_1)<-c("country","region","happiness_rank","happiness_score","econ","family","health","freedom","corruption","genero")
+data_2016_test_1<-data_2016_test_1%>%mutate(year = "2016")
+
+
+data_2017_test_1<-data2017%>%left_join(region_country)%>%select(-Whisker.high,-Whisker.low,-Dystopia.Residual)
+names(data_2017_test_1)<-c("country","happiness_rank","happiness_score","econ","family","health","freedom","corruption","genero","region")
+data_2017_test_1<-data_2017_test_1%>%select(country,region,happiness_rank,happiness_score,econ,family,health,freedom,corruption,genero)%>%mutate(year = "2017")
+
+data_2018_test_1<-data2018%>%left_join(region_country, by = c("Country or region" = "Country"))
+names(data_2018_test_1)<-c("happiness_rank","country","happiness_score","econ","family","health","freedom","genero","corruption","region")
+data_2018_test_1<-data_2018_test_1%>%select(country,region,happiness_rank,happiness_score,econ,family,health,freedom,corruption,genero)%>%mutate(year = "2018")
+
+data_2019_test_1<-data2019%>%left_join(region_country, by = c("Country or region" = "Country"))
+names(data_2019_test_1)<-c("happiness_rank","country","happiness_score","econ","family","health","freedom","genero","corruption","region")
+data_2019_test_1<-data_2019_test_1%>%select(country,region,happiness_rank,happiness_score,econ,family,health,freedom,corruption,genero)%>%mutate(year = "2019")
+
+
+data_2020_test_1<-data2020%>%select(`Country name`,`Regional indicator`,`Ladder score`,`Explained by: Log GDP per capita`,`Explained by: Social support`,`Explained by: Healthy life expectancy`,`Explained by: Freedom to make life choices`,`Explained by: Generosity`,`Explained by: Perceptions of corruption`)
+
+data_2020_test_1<-data_2020_test_1%>%arrange(desc(`Ladder score`))%>%mutate(rank = 1:n())
+names(data_2020_test_1)<-c("country","region","happiness_score","econ","family","health","freedom","genero","corruption","happiness_rank")
+data_2020_test_1<-data_2020_test_1%>%select(country,region,happiness_rank,happiness_score,econ,family,health,freedom,corruption,genero)%>%mutate(year = "2020")
+
+data_total<-rbind(data_2015_test_1,data_2016_test_1,data_2017_test_1,data_2018_test_1,data_2019_test_1,data_2020_test_1)
+
+data_total$corruption<-as.numeric(data_total$corruption)
+
+data_total$region<- case_when(str_detect(data_total$region,"Europe")~"Europe",
+                              str_detect(data_total$region,"Asia")~"Asia",
+                              str_detect(data_total$region,"Africa")~"Africa",
+                              str_detect(data_total$region,"America")~"America",
+                              str_detect(data_total$region,"Australia")~"Pacific",
+                              TRUE~"Other")
+```
+
+## Data Exploratory Analysis
+To study the relationship among variables, the simplest way is to use the `ggpair()` function.
+```{r, message=FALSE, warning=FALSE}
+library(GGally)
+data_total%>%select(-country,-region)%>%ggpairs()
+```
+
+From the graph above, we see clearly that there exists a strong positive correlation between `happiness score` and `econ`, `happiness score` and `family`,`happiness score` and `health`, and `health` and `econ`.
+
+Then we will anlayze the data by year.
+```{r}
+data_total%>%ggplot(aes(x = year, y = happiness_score))+geom_boxplot()+scale_y_log10()
+```
+
+
+```{r}
+data_total%>%ggplot(aes(x = year, y = econ))+geom_boxplot()+geom_smooth(color="black", aes(group=1))
+```
+
+
+```{r}
+data_total%>%ggplot(aes(x = year, y = health))+geom_boxplot()+geom_smooth(color="black", aes(group=1))
+```
+
+```{r}
+data_total%>%ggplot(aes(x = year, y = freedom))+geom_boxplot()+geom_smooth(color="black", aes(group=1))
+```
+
+```{r}
+data_total%>%ggplot(aes(x = year, y = corruption))+geom_boxplot()+geom_smooth(color="black", aes(group=1))
+```
+
+```{r}
+data_total%>%ggplot(aes(x = year, y = genero))+geom_boxplot()+geom_smooth(color="black", aes(group=1))
+```
+
+We can see that 2017 is a quite special year: it has the highest average corruption index and GDP, while it also has a pretty low average health index, generosity, and happiness score. In this way, one should realize that economic situation alone (GDP per capita) couldn't determine the happiness level. 
+
+After finishing analyzing the data by year, we switch our focus to analysis by continent. As our first attempt, in the following graph, we show the distribution of happiness score for each of the five continents. For the second graph, we are basically telling the same story by looking at the density plot instead of a histogram. With the help of these two graphes, we find that Pacific, Europe and America have a greater proportion of high happiness score than the rest. 
+
+```{r}
+data_total%>%ggplot(aes(x = happiness_score))+geom_histogram(aes(fill = region), color = "white")+scale_fill_brewer(palette = "Paired")
+```
+
+```{r}
+data_total%>%filter(region!="Pacific")%>%ggplot(aes(x = happiness_score, fill = region))+geom_density(alpha = 0.5)+scale_fill_brewer(palette = "Paired")
+```
+
+With the following polar graph, we could also see the same pattern: the majority bars with high happiness score are made up of Europe, Pacific, and America. 
+
+```{r}
+data_total%>%ggplot(aes(x = reorder(country, happiness_score), y = happiness_score))+geom_col(aes(fill = region))+coord_polar()+theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+library(tidytext)
+data_total%>%group_by(year)%>%top_n(20, happiness_score)%>%mutate(country = reorder_within(country, happiness_score, year))%>%ggplot(aes(x = happiness_score, y = country, fill = region))+geom_bar(stat = "identity")+scale_y_reordered()+facet_wrap(~year, scales = "free")
+```
+
+```{r}
+data_total%>%group_by(year)%>%top_n(20, econ)%>%ggplot(aes(x = econ, y = reorder(country, econ), fill = region))+geom_bar(stat = "identity")+facet_wrap(~year, scales = "free_y")
+```
+
+
+```{r}
+world<-map_data("world")
+world_point<-world%>%select(long, lat, region)%>%group_by(region)%>%summarise(long = mean(long), lat = mean(lat))
+data_total_1<-data_total%>%left_join(world_point, by = c("country"="region"))
+
+ggplot()+geom_map(data = world, map= world, aes(long,lat,map_id = region), color = "white", fill = "grey50", alpha = 0.5)+geom_point(data = data_total_1, aes(x = long, y = lat,size = 1/happiness_rank, color = region), alpha = 0.7)+facet_wrap(~year)
+```
