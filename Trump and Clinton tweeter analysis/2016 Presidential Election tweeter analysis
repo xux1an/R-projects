@@ -1,0 +1,206 @@
+---
+title: "2016 Presidential Election data analysis"
+author: "Xuxin Zhang"
+date: "8/6/2020"
+output: html_document
+---
+
+In this project, we will analyze the tweeter data of Donald Trump and Hillary Clinton. The data contains detailed information about their tweets from January 2016 to Nov 29 2016 (for Clinton, the data spans from April 14 2016 to Nov 29 2016). We hope to use this data to find the tweeting pattern of Trump and Clinton such as what are the words they usually use, what are the time periods that they write most of their tweets, etc. To answer these questions, we will need to take the approach of text mining. Hopefully, at the end of this project, we could find out some hints that predict Trump would finally win the election.
+
+## 1. Dealing with the data
+First, we need to import and clean our data. To simplify the analysis, we would only focus on the tweets written in English only. 
+```{r}
+library(tidyverse)
+library(tidytext)
+library(stringr)
+library(lubridate)
+library(DT)
+library(RColorBrewer)
+
+tweets <- read_csv("tweets.csv")
+
+tweets_cleaned <- tweets%>%filter(lang=="en")%>%select(id, handle, text, is_retweet, time,retweet_count,favorite_count)
+tweets_cleaned$time<-ymd_hms(tweets_cleaned$time)
+```
+
+After the cleaning, we can take a look at our data here.
+```{r}
+tweets_cleaned
+```
+
+
+## 2. Exploratory data analysis
+###2.1 Preliminary analysis
+Since we have got the cleaned dataset, we are now ready to do some preliminary data analysis. First, we count the number of tweets for both Trump and Clinton. From the summary below, we can see that the total number of tweets for both of them is not that different.
+```{r}
+tweets_cleaned%>%count(handle)
+```
+
+Then we try to find out their retweet pattern.
+
+```{r}
+tweets_cleaned%>%count(handle,is_retweet)%>%group_by(handle)%>%mutate(total = sum(n))%>%transmute(handle,is_retweet,prop = n/total,total)
+```
+
+We can visualize the information above with barplot.
+```{r}
+library(plotly)
+retweet<-tweets_cleaned%>%count(handle,is_retweet)
+
+ggplotly(retweet%>%ggplot(aes(x = handle,y = n,fill = is_retweet))+geom_bar(stat = "identity",position = "fill")+labs(title = "Total number of tweets for Donald Trump and Hillary Clinton", x = "User Name", y = "Total Count")+scale_fill_brewer(palette = "Paired")+
+  theme_minimal()+
+  theme(legend.position = "top"))
+```
+
+From this graph, we could see that Clinton tends to retweet more than Trump: about 18.2% of Clinton's tweets is made up of her retweets, but for Trump, only 3.92% of his tweets is retweet.
+
+Then we anlayze the pattern of retweet count and favorite count of their tweets.
+```{r}
+fav_retweet <- tweets_cleaned%>%group_by(handle)%>%summarize(ave_retweet = sum(retweet_count)/n(), ave_favorite = sum(favorite_count)/n())
+
+fav_retweet
+```
+
+We can see that on average, Trump's tweets are not only retweeted more, but also get more favorite from the users than Clinton. Maybe this could be seen as a hint to the final result of this year's presidential election.
+
+```{r}
+ggplotly(tweets_cleaned %>% ggplot(aes(x = handle, y = retweet_count))+geom_boxplot(fill = "lightblue")+scale_y_log10()+labs(title = "Total number of retweets of Trump's and Clinton's tweets",x = "User Name",  y = "Total Count")+
+  theme_minimal()+
+  theme(legend.position = "top"))
+```
+
+```{r}
+ggplotly(tweets_cleaned %>% ggplot(aes(x = handle, y = favorite_count))+geom_boxplot(fill = "pink")+scale_y_log10()+labs(title = "Total number of favorite of Trump's and Clinton's tweets",x = "User Name",  y = "Total Count")+
+  theme_minimal()+
+  theme(legend.position = "top"))
+```
+
+###2.2 Time span analysis
+In this section, we focus on how Trump's and Clinton's tweeting pattern change over time.
+
+The graph below shows how the total number of Clinton's and Trump's tweets changes.
+```{r}
+tweets_cleaned$date <- ymd(as.Date(tweets_cleaned$time))
+
+ggplotly(tweets_cleaned%>%count(handle, date)%>%ggplot(aes(x = date, y = n, color = handle))+geom_line()+labs(title = "Total number of Trump's and Clinton's tweets across time",x = "Date",  y = "Total Count", color = "User Name")+scale_color_brewer(palette = "Paired")+
+  theme_minimal()+
+  theme(legend.position = "top"))
+```
+
+Notice that Trump's total number of tweets per day doesn't vary too much across time, but Clinton clearly tweets more when approaching the date of presidential election.
+
+We can also find out how the favorite and retweet count change over time for both of them.
+```{r}
+ggplotly(tweets_cleaned%>%group_by(handle, date)%>%summarise(ave_retweet = sum(retweet_count)/n(), ave_favorite = sum(favorite_count)/n())%>%ggplot(aes(x = date, y = ave_retweet, color = handle))+geom_line()+labs(title = "Average retweet count of Trump's and Clinton's tweets across time",x = "Date",  y = "Average retweet count", color = "User Name")+scale_color_brewer(palette = "Paired")+
+  theme_minimal()+
+  theme(legend.position = "top"))
+```
+
+```{r}
+ggplotly(tweets_cleaned%>%group_by(handle, date)%>%summarise(ave_retweet = sum(retweet_count)/n(), ave_favorite = sum(favorite_count)/n())%>%ggplot(aes(x = date, y = ave_favorite, color = handle))+geom_line()+labs(title = "Average favorite count of Trump's and Clinton's tweets across time",x = "Date",  y = "Total Count", color = "User Name")+scale_color_brewer(palette = "Paired")+
+  theme_minimal()+
+  theme(legend.position = "top"))
+```
+
+From the two graphs above, we can see that except for the date June 9 2016, both of the average retweet and favorite count of Trump's tweets are greater than that of Hillary. In order to find out what happened at that day, we can filter out the tweets of that particular day.
+
+```{r}
+tweets_cleaned%>%filter(date == ymd("2016-06-09"), is_retweet==FALSE)%>%select(handle,text,favorite_count,retweet_count)%>%arrange(desc(favorite_count))%>%datatable()
+```
+
+After studying their tweet pattern across month, we could focus on smaller time units like weekday and hour. 
+
+The diagram below shows the number of tweets Clinton and Trump wrote in a one-hour interval.
+```{r}
+ggplotly(tweets_cleaned%>%mutate(hour = as.factor(hour(time)))%>%count(handle,hour)%>%ggplot(aes(x = hour, y = n, fill = handle))+geom_col(position = "dodge")+scale_fill_brewer(palette = "Paired")+labs(title = "Total number of Trump's and Clinton's tweets in a day",x = "Hour",  y = "Total Count", fill = "User Name")+
+  theme_minimal()+
+  theme(legend.position = "top"))
+```
+
+In this graph, we see that Trump usually sent way more tweets from 3 a.m. to 1 p.m. than Clinton. In addition, I feel suprised seeing Clinton wrote more tweets than Trump during the midnight. 
+
+Then we plot the their tweeting pattern in a week.
+```{r}
+ggplotly(tweets_cleaned%>%mutate(weekday = as.factor(wday(time,label = TRUE)))%>%count(handle,weekday)%>%ggplot(aes(x = weekday, y = n, fill = handle))+geom_col(position = "dodge")+labs(title = "Total number of Trump's and Clinton's tweets in a week",x = "Weekday",  y = "Total Count", fill = "User Name")+scale_fill_brewer(palette = "Paired")+
+  theme_minimal()+
+  theme(legend.position = "top"))
+```
+
+From this graph, we see clearly that Hillary sends more tweets during the weekdays, while Trump sends out more tweets during the weekends.
+
+We could combine the two graphs above together into a heatmap.
+```{r}
+ggplotly(tweets_cleaned%>%mutate(weekday = as.factor(wday(time,label = TRUE)),hour = as.factor(hour(time)))%>%count(handle,weekday,hour)%>%ggplot(aes(x = weekday, y = hour, fill = n))+geom_tile()+scale_fill_gradient(low = "yellow", high = "red")+labs(title = "Distribution of Trump's and Clinton's tweets across time",x = "Weekday",  y = "Hour", fill = "Total count")+facet_wrap(~handle)+
+  theme_minimal()+
+  theme(legend.position = "top"))
+```
+
+
+## 3. Text mining
+In this section, we focus on the word usage for Trump's and Clinton's tweets. In order to do so, we need to tokenize the text body of tweets into single word.
+```{r}
+tweet_token<-tweets_cleaned%>%unnest_tokens(word,text)%>%anti_join(stop_words)%>%filter(!word%in%c("https","t.co"))
+tweet_token
+```
+
+### 3.1 Word analysis
+First, let's take a look at the mostly used words for both of the presidential candidates.
+```{r}
+tweet_token%>%count(handle,word)%>%group_by(handle)%>%top_n(10)%>%arrange(desc(n))
+```
+
+We can visualize the information above in two ways.
+```{r}
+ggplotly(tweet_token%>%count(handle,word)%>%group_by(handle)%>%top_n(20)%>%arrange(desc(n))%>%ggplot(aes(x = n, y = reorder(word,n), fill = handle))+geom_col()+facet_wrap(~handle,scales = "free_y")+scale_fill_brewer(palette = "Paired")+labs(title = "Mostly used words by Trump and Clinton",x = "Count",  y = "Words", fill = "Username")+
+  theme_minimal()+
+  theme(legend.position = "top"))
+
+```
+
+```{r, message=FALSE, warning=FALSE}
+library(reshape2)
+library(wordcloud)
+tweet_token%>%count(handle,word, sort = TRUE)%>%acast(word ~ handle, value.var = "n", fill = 0) %>%comparison.cloud(colors = c("lightblue", "pink"),max.words = 150)
+
+```
+
+### 3.2 tf-idf
+Next, we analyze the words used uniquely by each of them by using tf-idf.
+```{r}
+tweet_token%>%count(handle,word)%>%bind_tf_idf(word, handle, n)%>%arrange(desc(tf_idf))%>%group_by(handle)%>%top_n(20)%>%ggplot(aes(x = tf_idf,  y = reorder(word, tf_idf), fill = handle))+geom_col()+facet_wrap(~handle, scales = "free")+scale_fill_brewer(palette = "Paired")+labs(title = "Words with high tf-idf used by Trump and Clinton",x = "Count",  y = "Word", fill = "Username")+
+  theme_minimal()+
+  theme(legend.position = "top")
+```
+
+By studying the tf-idf, we could gain some insight about what are the issues the two presidential candidates focus the most.
+
+## 4. Sentiment analysis
+First, we can find out the positive and negative words mostly used by Trump and Clinton.
+```{r}
+sent <- tweet_token%>%inner_join(get_sentiments("afinn"))
+
+sent%>%group_by(handle,word)%>%summarise(contribution = n()*mean(value))%>%group_by(handle)%>%arrange(desc(abs(contribution)))%>%top_n(20) %>% ggplot(aes(x = contribution, y = reorder(word,contribution), fill = handle))+geom_col()+facet_wrap(~handle, scales = "free_y")+scale_fill_brewer(palette = "Paired")+labs(title = "Top 20 positive words used by Trump and Clinton",x = "Contribution",  y = "Word", fill = "Username")+
+  theme_minimal()+
+  theme(legend.position = "top")
+```
+
+
+```{r}
+sent%>%group_by(handle,word)%>%summarise(contribution = n()*mean(value))%>%group_by(handle)%>%top_n(-20) %>% ggplot(aes(x = contribution, y = reorder(word,contribution), fill = handle))+geom_col()+facet_wrap(~handle, scales = "free")+scale_fill_brewer(palette = "Paired")+labs(title = "Top 20 negative words used by Trump and Clinton",x = "Contribution",  y = "Word", fill = "Username")+
+  theme_minimal()+
+  theme(legend.position = "top")
+```
+After getting familiar with the postive and negative word usage of Trump and Clinton, we can further visualize the change in their tweets' sentimental level across time.
+
+```{r}
+total_sent <- sent%>%group_by(id)%>%summarise(total_sent = sum(value,na.rm = TRUE))%>%arrange(desc(total_sent))
+
+tweet_sent <- tweet_token%>%left_join(total_sent, by = "id")
+
+tweet_sent_date <- tweet_sent%>%group_by(handle, date)%>%summarise(av_sent_date = mean(total_sent,na.rm = TRUE))
+
+ggplotly(tweet_sent_date%>%ggplot(aes(x = date , y =av_sent_date, color = handle))+geom_line()+geom_smooth(se = FALSE)+scale_color_manual(values = c("lightblue","pink"))+labs(x = "Date", y = "Average Sentiment Level", title = "Change in tweets' sentiment level")+
+  theme_minimal()+
+  theme(legend.position = "top"))
+```
+
